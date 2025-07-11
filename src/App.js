@@ -8,6 +8,10 @@ import Photoshoots from './pages/Photoshoots';
 import Realestate from './pages/Realestate';
 import Reviews from './pages/Reviews';
 import BookNow from './pages/BookNow';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import CreateGallery from './pages/admin/CreateGallery';
+import UploadPhotos from './pages/admin/UploadPhotos';
+import GalleryPage from './pages/gallery/GalleryPage';
 import './index.css';
 
 function App() {
@@ -20,6 +24,10 @@ function App() {
         <Route path="/realestate" element={<Realestate />} />
         <Route path="/reviews" element={<Reviews />} />
         <Route path="/book" element={<BookNow />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/create" element={<CreateGallery />} />
+        <Route path="/admin/upload/:slug" element={<UploadPhotos />} />
+        <Route path="/gallery/:slug" element={<GalleryPage />} />
       </Routes>
     </Router>
   );
