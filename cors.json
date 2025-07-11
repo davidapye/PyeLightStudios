@@ -1,0 +1,8 @@
+[
+    {
+      "origin": ["https://pyelightstudios.com"],
+      "method": ["GET"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+  

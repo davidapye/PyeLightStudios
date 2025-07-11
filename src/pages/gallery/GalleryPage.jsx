@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { db } from '../../firebase';
+import { db, storage } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { ref as storageRef, getBlob } from 'firebase/storage';
 import { useSwipeable } from 'react-swipeable';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -13,6 +14,8 @@ const GalleryPage = () => {
   const [enteredPassword, setEnteredPassword] = useState('');
   const [authorized, setAuthorized] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     const fetchGallery = async () => {
@@ -78,20 +81,29 @@ const GalleryPage = () => {
   });
 
   const downloadAllPhotos = async () => {
+    setIsDownloading(true);
+    setDownloadProgress(0);
     const zip = new JSZip();
     const folder = zip.folder(gallery.slug);
 
     await Promise.all(
       gallery.photos.map(async (url, index) => {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const fileName = `photo-${index + 1}.jpg`;
-        folder.file(fileName, blob);
+        try {
+          const path = decodeURIComponent(new URL(url).pathname.split('/o/')[1].split('?')[0]);
+          const fileRef = storageRef(storage, path);
+          const blob = await getBlob(fileRef);
+          const fileName = `photo-${index + 1}.jpg`;
+          folder.file(fileName, blob);
+          setDownloadProgress(((index + 1) / gallery.photos.length) * 100);
+        } catch (err) {
+          console.error('Error fetching photo:', err);
+        }
       })
     );
 
     const content = await zip.generateAsync({ type: 'blob' });
     saveAs(content, `${gallery.slug}.zip`);
+    setIsDownloading(false);
   };
 
   if (loading) return <p className="text-center p-8">Loading gallery...</p>;
@@ -128,10 +140,19 @@ const GalleryPage = () => {
       <div className="mb-4">
         <button
           onClick={downloadAllPhotos}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+          disabled={isDownloading}
         >
-          Download All Photos
+          {isDownloading ? 'Downloading...' : 'Download All Photos'}
         </button>
+        {isDownloading && (
+          <div className="w-full mt-2 bg-gray-200 rounded h-2 overflow-hidden">
+            <div
+              className="bg-green-600 h-2 transition-all duration-200"
+              style={{ width: `${downloadProgress}%` }}
+            ></div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">

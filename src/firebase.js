@@ -10,13 +10,13 @@ import { getAuth } from "firebase/auth";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBz4J3NU-BGQqw1jHLtFvrsQzz2ybhikdU",
-  authDomain: "pye-light-client-gallery.firebaseapp.com",
-  projectId: "pye-light-client-gallery",
-  storageBucket: "pye-light-client-gallery.firebasestorage.app",
-  messagingSenderId: "861729992662",
-  appId: "1:861729992662:web:f673b825b9a24d44b8fe77",
-  measurementId: "G-YEZTPF2YSN"
+  apiKey: "AIzaSyCLlsaTub56NYm1aAzSrUioj1QeFJJ3v8U",
+  authDomain: "pyelightgallery.firebaseapp.com",
+  projectId: "pyelightgallery",
+  storageBucket: "pyelightgallery.firebasestorage.app",
+  messagingSenderId: "349810570651",
+  appId: "1:349810570651:web:d2b0b929f5488841d99d3e",
+  measurementId: "G-WPTRWZXY5T"
 };
 
 // Initialize Firebase
