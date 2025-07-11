@@ -1,0 +1,30 @@
+.about {
+    padding: 4rem 1rem;
+    background: #f8f8f8;
+    display: flex;
+    justify-content: center;
+  }
+  
+  .about-content {
+    max-width: 900px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    align-items: center;
+  }
+  
+  .about-content img {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 8px;
+  }
+  
+  .about-content div {
+    flex: 1;
+  }
+  
+  .about h2 {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+  }
+  

@@ -1,0 +1,1 @@
+export default function Realestate() { return <div style={{padding:"2rem"}}><h1>Realestate</h1></div>; }
