@@ -2,10 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, storage } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { ref as storageRef, getBlob } from 'firebase/storage';
+import { ref as storageRef, getDownloadURL } from 'firebase/storage';
 import { useSwipeable } from 'react-swipeable';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 
 const GalleryPage = () => {
   const { slug } = useParams();
@@ -16,6 +14,7 @@ const GalleryPage = () => {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [zipAvailable, setZipAvailable] = useState(false);
 
   useEffect(() => {
     const fetchGallery = async () => {
@@ -43,6 +42,20 @@ const GalleryPage = () => {
 
     fetchGallery();
   }, [slug]);
+
+  useEffect(() => {
+    const checkZip = async () => {
+      try {
+        const zipRef = storageRef(storage, `zips/${slug}.zip`);
+        await getDownloadURL(zipRef);
+        setZipAvailable(true);
+      } catch {
+        setZipAvailable(false);
+      }
+    };
+
+    if (gallery) checkZip();
+  }, [gallery, slug]);
 
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
@@ -83,27 +96,16 @@ const GalleryPage = () => {
   const downloadAllPhotos = async () => {
     setIsDownloading(true);
     setDownloadProgress(0);
-    const zip = new JSZip();
-    const folder = zip.folder(gallery.slug);
-
-    await Promise.all(
-      gallery.photos.map(async (url, index) => {
-        try {
-          const path = decodeURIComponent(new URL(url).pathname.split('/o/')[1].split('?')[0]);
-          const fileRef = storageRef(storage, path);
-          const blob = await getBlob(fileRef);
-          const fileName = `photo-${index + 1}.jpg`;
-          folder.file(fileName, blob);
-          setDownloadProgress(((index + 1) / gallery.photos.length) * 100);
-        } catch (err) {
-          console.error('Error fetching photo:', err);
-        }
-      })
-    );
-
-    const content = await zip.generateAsync({ type: 'blob' });
-    saveAs(content, `${gallery.slug}.zip`);
-    setIsDownloading(false);
+    try {
+      const zipRef = storageRef(storage, `zips/${gallery.slug}.zip`);
+      const url = await getDownloadURL(zipRef);
+      window.location.href = url;
+    } catch (err) {
+      console.error('ZIP not found or error:', err);
+      alert('Download not available. ZIP file not found for this gallery.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (loading) return <p className="text-center p-8">Loading gallery...</p>;
@@ -137,31 +139,27 @@ const GalleryPage = () => {
     <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">{gallery.title}</h1>
 
-      <div className="mb-4">
-        <button
-          onClick={downloadAllPhotos}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-          disabled={isDownloading}
-        >
-          {isDownloading ? 'Downloading...' : 'Download All Photos'}
-        </button>
-        {isDownloading && (
-          <div className="w-full mt-2 bg-gray-200 rounded h-2 overflow-hidden">
-            <div
-              className="bg-green-600 h-2 transition-all duration-200"
-              style={{ width: `${downloadProgress}%` }}
-            ></div>
-          </div>
-        )}
-      </div>
+      {zipAvailable && (
+        <div className="mb-4">
+          <button
+            onClick={downloadAllPhotos}
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+            disabled={isDownloading}
+          >
+            {isDownloading ? 'Checking for ZIP...' : 'Download All Photos (.zip)'}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {gallery.photos?.map((url, index) => (
           <div key={index} className="overflow-hidden rounded shadow">
             <img
+              loading="lazy"
               src={url}
               alt={`Gallery Image ${index + 1}`}
-              className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"
+              className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer opacity-0 animate-fade-in"
+              onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
               onClick={() => setLightboxIndex(index)}
             />
           </div>

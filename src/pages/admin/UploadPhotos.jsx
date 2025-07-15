@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ref, uploadBytesResumable, getDownloadURL, listAll } from 'firebase/storage';
+import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
 import { storage, db } from '../../firebase';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 
@@ -97,6 +97,23 @@ const UploadPhotos = () => {
     }
   };
 
+  const handleZipUpload = async (e) => {
+    const zipFile = e.target.files[0];
+    if (!zipFile || !zipFile.name.endsWith('.zip')) {
+      alert('Please select a valid .zip file.');
+      return;
+    }
+
+    try {
+      const zipRef = ref(storage, `zips/${slug}.zip`);
+      await uploadBytes(zipRef, zipFile, { contentType: 'application/zip' });
+      alert('ZIP file uploaded successfully.');
+    } catch (error) {
+      console.error('ZIP upload error:', error);
+      alert('Failed to upload ZIP file.');
+    }
+  };
+
   return (
     <div className="max-w-xl mx-auto p-6">
       <h2 className="text-2xl font-bold mb-4">Upload Photos to: {slug}</h2>
@@ -125,6 +142,16 @@ const UploadPhotos = () => {
       >
         {uploading ? `Uploading (${progress}%)...` : 'Upload Photos'}
       </button>
+
+      <hr className="my-6" />
+
+      <h2 className="text-xl font-semibold mb-2">Optional: Upload ZIP File</h2>
+      <input
+        type="file"
+        accept=".zip"
+        onChange={handleZipUpload}
+        className="mb-4"
+      />
 
       <h3 className="text-xl font-semibold mt-8 mb-4">Uploaded Photos</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
