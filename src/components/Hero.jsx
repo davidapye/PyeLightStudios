@@ -22,10 +22,16 @@ function Hero() {
             <img src="/images/IMG_0109.jpg" alt="Slide 1" />
           </div>
           <div>
-            <img src="/images/JayAndKen.jpg" alt="Slide 2" />
+            <img src="/images/TrentLindsayLake.jpg" alt="Slide 2" />
           </div>
           <div>
             <img src="/images/KatieByWater.jpg" alt="Slide 3" style={{ objectPosition: '25% center' }}/>
+          </div>
+          <div>
+            <img src="/images/TrentLindsayKiss.jpg" alt="Slide 4" />
+          </div>
+          <div>
+            <img src="/images/JayAndKen.jpg" alt="Slide 5" />
           </div>
         </Carousel>
       </div>

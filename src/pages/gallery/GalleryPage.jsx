@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { db, storage } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -15,6 +15,10 @@ const GalleryPage = () => {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [isDownloading, setIsDownloading] = useState(false);
   const [zipAvailable, setZipAvailable] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(10); // preload first 10 images
+
+  const imgRefs = useRef([]);
+  const isMobile = window.innerWidth < 768;
 
   useEffect(() => {
     const fetchGallery = async () => {
@@ -36,7 +40,7 @@ const GalleryPage = () => {
       } catch (error) {
         console.error('Error fetching gallery:', error);
       } finally {
-        setLoading(false);
+        setTimeout(() => setLoading(false), isMobile ? 300 : 0);
       }
     };
 
@@ -67,17 +71,20 @@ const GalleryPage = () => {
     }
   };
 
-  const handleKeyDown = useCallback((e) => {
-    if (lightboxIndex !== null) {
-      if (e.key === 'ArrowRight') {
-        setLightboxIndex((prev) => (prev + 1) % gallery.photos.length);
-      } else if (e.key === 'ArrowLeft') {
-        setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length);
-      } else if (e.key === 'Escape') {
-        setLightboxIndex(null);
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (lightboxIndex !== null) {
+        if (e.key === 'ArrowRight') {
+          setLightboxIndex((prev) => (prev + 1) % gallery.photos.length);
+        } else if (e.key === 'ArrowLeft') {
+          setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length);
+        } else if (e.key === 'Escape') {
+          setLightboxIndex(null);
+        }
       }
-    }
-  }, [lightboxIndex, gallery]);
+    },
+    [lightboxIndex, gallery]
+  );
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -85,10 +92,8 @@ const GalleryPage = () => {
   }, [handleKeyDown]);
 
   const swipeHandlers = useSwipeable({
-    onSwipedLeft: () =>
-      setLightboxIndex((prev) => (prev + 1) % gallery.photos.length),
-    onSwipedRight: () =>
-      setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length),
+    onSwipedLeft: () => setLightboxIndex((prev) => (prev + 1) % gallery.photos.length),
+    onSwipedRight: () => setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length),
     onSwipedDown: () => setLightboxIndex(null),
     trackMouse: true,
   });
@@ -107,6 +112,42 @@ const GalleryPage = () => {
       setIsDownloading(false);
     }
   };
+
+  useEffect(() => {
+    if (!gallery?.photos?.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            const fullSrc = img.dataset.src;
+            if (fullSrc) {
+              img.src = fullSrc;
+              img.classList.remove('blur-sm');
+              observer.unobserve(img);
+            }
+          }
+        });
+      },
+      { rootMargin: isMobile ? '400px' : '200px' }
+    );
+
+    imgRefs.current.forEach((img) => img && observer.observe(img));
+
+    return () => observer.disconnect();
+  }, [gallery, isMobile, visibleCount]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100) {
+        setVisibleCount((prev) => Math.min(prev + 24, gallery.photos.length));
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [gallery, isMobile]);
 
   if (loading) return <p className="text-center p-8">Loading gallery...</p>;
   if (!gallery) return <p className="text-center p-8">Gallery not found.</p>;
@@ -152,18 +193,22 @@ const GalleryPage = () => {
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {gallery.photos?.map((url, index) => (
-          <div key={index} className="overflow-hidden rounded shadow">
-            <img
-              loading="lazy"
-              src={url}
-              alt={`Gallery Image ${index + 1}`}
-              className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer opacity-0 animate-fade-in"
-              onLoad={(e) => e.currentTarget.classList.remove('opacity-0')}
-              onClick={() => setLightboxIndex(index)}
-            />
-          </div>
-        ))}
+        {gallery.photos?.slice(0, isMobile ? visibleCount : gallery.photos.length).map((url, index) => {
+          const lowResUrl = url.replace(/(\?.*)?$/, '?width=20&height=20&quality=10');
+          const isPreloaded = index < 10;
+          return (
+            <div key={index} className="overflow-hidden rounded shadow">
+              <img
+                ref={(el) => (imgRefs.current[index] = el)}
+                src={isPreloaded ? url : lowResUrl}
+                data-src={isPreloaded ? undefined : url}
+                alt={`Gallery Image ${index + 1}`}
+                className={`w-full h-full object-cover transition-opacity duration-500 cursor-pointer ${isPreloaded ? '' : 'blur-sm'}`}
+                onClick={() => setLightboxIndex(index)}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {lightboxIndex !== null && (
