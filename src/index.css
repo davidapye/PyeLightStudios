@@ -3,3 +3,24 @@
 @tailwind utilities;
 
 body { margin: 0; font-family: "Quicksand", sans-serif; }
+
+@font-face {
+    font-family: 'Tomatoes';
+    src: url('/src/assets/fonts/Tomatoes.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: 'Beautiful People';
+    src: url('/src/assets/fonts/BeautifulPeople.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: 'Quick Kiss';
+    src: url('/src/assets/fonts/QuickKiss.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
