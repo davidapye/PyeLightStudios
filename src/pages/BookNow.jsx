@@ -4,10 +4,10 @@ import emailjs from '@emailjs/browser';
 const BookNow = () => {
   const form = useRef();
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
+    firstname: '',
+    lastname: '',
     email: '',
-    phone: '',
+    phonenumber: '',
     message: '',
   });
   const [status, setStatus] = useState('');
@@ -30,10 +30,10 @@ const BookNow = () => {
           () => {
             console.log('SUCCESS!');
             setFormData({
-              firstName: '',
-              lastName: '',
+              firstname: '',
+              lastname: '',
               email: '',
-              phone: '',
+              phonenumber: '',
               message: '',
             });
             setSubmitted(true);
@@ -56,18 +56,18 @@ const BookNow = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input
             type="text"
-            name="firstName"
+            name="firstname"
             placeholder="First name"
-            value={formData.firstName}
+            value={formData.firstname}
             onChange={handleChange}
             required
             className="border p-3 rounded-md"
           />
           <input
             type="text"
-            name="lastName"
+            name="lastname"
             placeholder="Last name"
-            value={formData.lastName}
+            value={formData.lastname}
             onChange={handleChange}
             required
             className="border p-3 rounded-md"
@@ -84,9 +84,9 @@ const BookNow = () => {
         />
         <input
           type="text"
-          name="phone"
+          name="phonenumber"
           placeholder="Phone Number"
-          value={formData.phone}
+          value={formData.phonenumber}
           onChange={handleChange}
           required
           className="border p-3 rounded-md"
