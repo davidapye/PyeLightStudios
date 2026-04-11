@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
 import { storage, db } from '../../firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 
 const UploadPhotos = () => {
   const { slug } = useParams();
@@ -27,20 +27,75 @@ const UploadPhotos = () => {
     fetchUploadedPhotos();
   }, [slug]);
 
+  const isRealImageFile = (file) => {
+    const name = file?.name || '';
+    if (!name) return false;
+    if (name.startsWith('.')) return false;
+    if (name.startsWith('._')) return false;
+    if (name === '.DS_Store') return false;
+    if (file.size === 0) return false;
+    if (!file.type || !file.type.startsWith('image/')) return false;
+    return true;
+  };
+
   const handleFileChange = (e) => {
-    const fileList = Array.from(e.target.files);
+    const fileList = Array.from(e.target.files).filter(isRealImageFile);
     setFiles(fileList);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const fileList = Array.from(e.dataTransfer.files);
+    const fileList = Array.from(e.dataTransfer.files).filter(isRealImageFile);
     setFiles(fileList);
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
   };
+
+  const fileToWebpThumbnail = (file, maxSize = 600, quality = 0.82) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+
+      img.onload = () => {
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error('Canvas context unavailable'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            URL.revokeObjectURL(objectUrl);
+            if (!blob) {
+              reject(new Error('Failed to create WEBP thumbnail'));
+              return;
+            }
+            resolve(blob);
+          },
+          'image/webp',
+          quality,
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error(`Failed to load image for thumbnail: ${file.name}`));
+      };
+
+      img.src = objectUrl;
+    });
 
   const uploadPhotos = async () => {
     if (!files.length) return alert('Please select files first.');
@@ -50,14 +105,16 @@ const UploadPhotos = () => {
       const updatedUrls = [...uploadedPhotos];
 
       for (let file of files) {
-        if (file.size === 0) {
-          console.warn(`Skipping empty file: ${file.name}`);
+        if (!isRealImageFile(file)) {
+          console.warn(`Skipping non-image/system file: ${file.name}`);
           continue;
         }
 
         const cleanName = file.name.split('/').pop();
-        const fileRef = ref(storage, `galleries/${slug}/${cleanName}`);
-        const uploadTask = uploadBytesResumable(fileRef, file);
+        const baseName = cleanName.replace(/\.[^.]+$/, '');
+        const originalRef = ref(storage, `galleries/${slug}/${cleanName}`);
+        const thumbRef = ref(storage, `thumbs/${slug}/${baseName}.webp`);
+        const uploadTask = uploadBytesResumable(originalRef, file);
 
         await new Promise((resolve, reject) => {
           uploadTask.on(
@@ -71,11 +128,19 @@ const UploadPhotos = () => {
               reject(error);
             },
             async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              if (!updatedUrls.includes(downloadURL)) {
-                updatedUrls.push(downloadURL);
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                if (!updatedUrls.includes(downloadURL)) {
+                  updatedUrls.push(downloadURL);
+                }
+
+                const thumbBlob = await fileToWebpThumbnail(file);
+                await uploadBytes(thumbRef, thumbBlob, { contentType: 'image/webp' });
+                resolve();
+              } catch (thumbError) {
+                console.error('Thumbnail generation/upload error:', thumbError);
+                reject(thumbError);
               }
-              resolve();
             }
           );
         });
@@ -88,7 +153,7 @@ const UploadPhotos = () => {
       const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
       setUploadedPhotos(urls);
       setFiles([]);
-      alert('Upload complete!');
+      alert('Upload complete! Originals uploaded and WEBP thumbnails created.');
     } catch (error) {
       console.error('Fatal upload error:', error);
       alert('Something went wrong during upload. Check console for details.');

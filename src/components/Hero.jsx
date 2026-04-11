@@ -44,7 +44,7 @@ function Hero() {
         <div className="mb-6">
         <p className="text-2xl sm:text-3xl font-semibold drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
           <span className="text-white line-through mr-3 font-sans drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">$200</span>
-          <span className="text-white font-extrabold text-4xl font-sans drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">$60</span>
+          <span className="text-white font-extrabold text-4xl font-sans drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">$80</span>
         </p>
         <p className="text-xl sm:text-2xl font-light text-white mt-1 font-sans tracking-wide drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
           for a <span className="font-medium">45-minute shoot</span>

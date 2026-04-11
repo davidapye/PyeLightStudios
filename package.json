@@ -27,7 +27,8 @@
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^1.8.11",
     "twilio": "^5.6.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "yet-another-react-lightbox": "^3.25.0"
   },
   "scripts": {
     "start": "react-scripts start",

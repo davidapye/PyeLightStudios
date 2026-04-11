@@ -14,6 +14,11 @@ import UploadPhotos from './pages/admin/UploadPhotos';
 import GalleryPage from './pages/gallery/GalleryPage';
 import './index.css';
 
+if (typeof window !== "undefined" && !("requestIdleCallback" in window)) {
+  window.requestIdleCallback = (cb) => setTimeout(cb, 200);
+  window.cancelIdleCallback = (id) => clearTimeout(id);
+}
+
 function App() {
   return (
     <Router>

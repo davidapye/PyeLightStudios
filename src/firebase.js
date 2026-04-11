@@ -2,7 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getStorage } from "firebase/storage";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence, terminate, clearIndexedDbPersistence } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -23,5 +23,18 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 export const storage = getStorage(app);
-export const db = getFirestore(app);
+const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// 🔴 Disable persistence globally
+// Firestore automatically enables persistence when supported,
+// so we explicitly turn it off:
+try {
+  //await terminate(db);
+  await clearIndexedDbPersistence(db);
+  console.log("Firestore persistence disabled.");
+} catch (e) {
+  console.warn("Failed to disable persistence:", e);
+}
+
+export { db };

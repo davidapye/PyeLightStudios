@@ -1,29 +1,38 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { db, storage } from '../../firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { ref as storageRef, getDownloadURL } from 'firebase/storage';
-import { useSwipeable } from 'react-swipeable';
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import { db, storage } from "../../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { ref as storageRef, getDownloadURL } from "firebase/storage";
+import Lightbox from "yet-another-react-lightbox";
+import "yet-another-react-lightbox/styles.css";
+import { Thumbnails, Zoom, Download } from "yet-another-react-lightbox/plugins";
+import "yet-another-react-lightbox/plugins/thumbnails.css";
 
 const GalleryPage = () => {
   const { slug } = useParams();
   const [gallery, setGallery] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [enteredPassword, setEnteredPassword] = useState('');
+  const [enteredPassword, setEnteredPassword] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [zipAvailable, setZipAvailable] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(10); // preload first 10 images
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [index, setIndex] = useState(-1);
+  const [isMobile, setIsMobile] = useState(false);
+  const [hiddenThumbs, setHiddenThumbs] = useState({});
+  const [hiddenSlides, setHiddenSlides] = useState({});
 
-  const imgRefs = useRef([]);
-  const isMobile = window.innerWidth < 768;
+  // Detect mobile safely after mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsMobile(window.innerWidth < 768);
+    }
+  }, []);
 
+  // Fetch gallery data
   useEffect(() => {
     const fetchGallery = async () => {
       try {
-        const docRef = doc(db, 'galleries', slug);
+        const docRef = doc(db, "galleries", slug);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -38,15 +47,16 @@ const GalleryPage = () => {
           setGallery(null);
         }
       } catch (error) {
-        console.error('Error fetching gallery:', error);
+        console.error("Error fetching gallery:", error);
       } finally {
-        setTimeout(() => setLoading(false), isMobile ? 300 : 0);
+        setTimeout(() => setLoading(false), 300);
       }
     };
 
     fetchGallery();
   }, [slug]);
 
+  // Check for ZIP file
   useEffect(() => {
     const checkZip = async () => {
       try {
@@ -57,9 +67,29 @@ const GalleryPage = () => {
         setZipAvailable(false);
       }
     };
-
     if (gallery) checkZip();
   }, [gallery, slug]);
+
+    // 🧹 Clean up Safari memory when closing lightbox
+    useEffect(() => {
+      // Only clean up after closing the lightbox
+      if (index === -1 && typeof window !== "undefined" && "indexedDB" in window) {
+        const safeIdleCallback =
+          window.requestIdleCallback ||
+          function (fn) {
+            return setTimeout(fn, 200);
+          };
+
+        safeIdleCallback(() => {
+          try {
+            indexedDB.deleteDatabase("firebaseLocalCache");
+          } catch (e) {
+            console.warn("IndexedDB cleanup skipped:", e);
+          }
+        });
+      }
+    }, [index]);
+
 
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
@@ -67,87 +97,50 @@ const GalleryPage = () => {
       localStorage.setItem(`gallery-password-${slug}`, enteredPassword);
       setAuthorized(true);
     } else {
-      alert('Incorrect password');
+      alert("Incorrect password");
     }
   };
 
-  const handleKeyDown = useCallback(
-    (e) => {
-      if (lightboxIndex !== null) {
-        if (e.key === 'ArrowRight') {
-          setLightboxIndex((prev) => (prev + 1) % gallery.photos.length);
-        } else if (e.key === 'ArrowLeft') {
-          setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length);
-        } else if (e.key === 'Escape') {
-          setLightboxIndex(null);
-        }
-      }
-    },
-    [lightboxIndex, gallery]
-  );
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
-
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => setLightboxIndex((prev) => (prev + 1) % gallery.photos.length),
-    onSwipedRight: () => setLightboxIndex((prev) => (prev - 1 + gallery.photos.length) % gallery.photos.length),
-    onSwipedDown: () => setLightboxIndex(null),
-    trackMouse: true,
-  });
-
   const downloadAllPhotos = async () => {
     setIsDownloading(true);
-    setDownloadProgress(0);
     try {
       const zipRef = storageRef(storage, `zips/${gallery.slug}.zip`);
       const url = await getDownloadURL(zipRef);
       window.location.href = url;
     } catch (err) {
-      console.error('ZIP not found or error:', err);
-      alert('Download not available. ZIP file not found for this gallery.');
+      console.error("ZIP not found or error:", err);
+      alert("Download not available. ZIP file not found for this gallery.");
     } finally {
       setIsDownloading(false);
     }
   };
 
-  useEffect(() => {
-    if (!gallery?.photos?.length) return;
+  const makeWebpThumb = (url) => {
+    const thumbsUrl = url.replace("/images/", "/thumbs/");
+    return thumbsUrl.replace(/\.(jpg|jpeg|png)$/i, ".webp");
+  };
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const img = entry.target;
-            const fullSrc = img.dataset.src;
-            if (fullSrc) {
-              img.src = fullSrc;
-              img.classList.remove('blur-sm');
-              observer.unobserve(img);
-            }
-          }
-        });
-      },
-      { rootMargin: isMobile ? '400px' : '200px' }
-    );
+  const makeFallbackThumb = (url) => url.replace("/images/", "/thumbs/");
 
-    imgRefs.current.forEach((img) => img && observer.observe(img));
+  // 🔥 Mobile memory optimization:
+  // - Limit slides on mobile
+  // - Use low-res thumbnails to prevent Safari memory crash
+  const photoList = gallery?.photos ?? [];
+  const limitedPhotos = isMobile ? photoList.slice(0, 40) : photoList;
 
-    return () => observer.disconnect();
-  }, [gallery, isMobile, visibleCount]);
-
-  useEffect(() => {
-    if (!isMobile) return;
-    const handleScroll = () => {
-      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100) {
-        setVisibleCount((prev) => Math.min(prev + 24, gallery.photos.length));
-      }
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [gallery, isMobile]);
+  const slides = useMemo(
+    () =>
+      limitedPhotos
+        .map((url, i) => ({
+          src: url,
+          thumbnail: makeWebpThumb(url),
+          fallbackThumbnail: makeFallbackThumb(url),
+          alt: `Gallery image ${i + 1}`,
+          originalIndex: i,
+        }))
+        .filter((slide) => !hiddenSlides[slide.originalIndex]),
+    [limitedPhotos, hiddenSlides],
+  );
 
   if (loading) return <p className="text-center p-8">Loading gallery...</p>;
   if (!gallery) return <p className="text-center p-8">Gallery not found.</p>;
@@ -187,61 +180,75 @@ const GalleryPage = () => {
             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
             disabled={isDownloading}
           >
-            {isDownloading ? 'Checking for ZIP...' : 'Download All Photos (.zip)'}
+            {isDownloading ? "Preparing ZIP..." : "Download All Photos (.zip)"}
           </button>
         </div>
       )}
 
+      {/* Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {gallery.photos?.slice(0, isMobile ? visibleCount : gallery.photos.length).map((url, index) => {
-          const lowResUrl = url.replace(/(\?.*)?$/, '?width=20&height=20&quality=10');
-          const isPreloaded = index < 10;
+        {slides.map((slide, i) => {
+          if (hiddenThumbs[slide.originalIndex]) return null;
+
           return (
-            <div key={index} className="overflow-hidden rounded shadow">
-              <img
-                ref={(el) => (imgRefs.current[index] = el)}
-                src={isPreloaded ? url : lowResUrl}
-                data-src={isPreloaded ? undefined : url}
-                alt={`Gallery Image ${index + 1}`}
-                className={`w-full h-full object-cover transition-opacity duration-500 cursor-pointer ${isPreloaded ? '' : 'blur-sm'}`}
-                onClick={() => setLightboxIndex(index)}
-              />
-            </div>
+            <img
+              key={slide.originalIndex}
+              src={slide.thumbnail}
+              alt=""
+              className="rounded shadow cursor-pointer w-full h-full object-cover transition-transform hover:scale-105"
+              loading="lazy"
+              decoding="async"
+              onClick={() => setIndex(i)}
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (img.dataset.fallbackTried === "1") {
+                  setHiddenThumbs((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                  setHiddenSlides((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                  return;
+                }
+                img.dataset.fallbackTried = "1";
+                img.src = slide.fallbackThumbnail;
+              }}
+            />
           );
         })}
       </div>
 
-      {lightboxIndex !== null && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
-          onClick={() => setLightboxIndex(null)}
-          {...swipeHandlers}
-        >
-          <div
-            className="relative max-w-7xl w-full max-h-[90vh] flex justify-center items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {/* Lightbox */}
+      <Lightbox
+        open={index >= 0}
+        close={() => setIndex(-1)}
+        index={index}
+        slides={slides}
+        plugins={[Thumbnails, Zoom, Download]}
+        animation={{ fade: 250 }}
+        carousel={{ finite: false, preload: 1 }} // 🚀 reduce memory footprint
+        thumbnails={{
+          position: "bottom",
+          showThumbnails: true,
+          width: isMobile ? 80 : 120,
+          height: isMobile ? 60 : 80,
+          borderRadius: 6,
+        }}
+        zoom={{ maxZoomPixelRatio: 2 }}
+        render={{
+          slide: ({ slide }) => (
             <img
-              src={gallery.photos[lightboxIndex]}
-              alt="Full view"
-              className="max-w-full max-h-[90vh] object-contain"
+              src={slide.src}
+              alt=""
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              onError={() => {
+                setHiddenSlides((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                setHiddenThumbs((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                setIndex((current) => {
+                  if (slides.length <= 1) return -1;
+                  return Math.min(current, slides.length - 2);
+                });
+              }}
             />
-            <button
-              onClick={() => setLightboxIndex(null)}
-              className="absolute top-4 right-4 text-white text-xl"
-            >
-              ✕
-            </button>
-            <a
-              href={gallery.photos[lightboxIndex]}
-              download
-              className="absolute bottom-4 right-4 bg-white text-black px-3 py-1 rounded shadow hover:bg-gray-200"
-            >
-              Download
-            </a>
-          </div>
-        </div>
-      )}
+          ),
+        }}
+      />
     </div>
   );
 };
