@@ -20,6 +20,9 @@ const GalleryPage = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [hiddenThumbs, setHiddenThumbs] = useState({});
   const [hiddenSlides, setHiddenSlides] = useState({});
+  const [thumbLoaded, setThumbLoaded] = useState({});
+  const [page, setPage] = useState(1);
+  const PHOTOS_PER_PAGE = 30;
 
   // Detect mobile safely after mount
   useEffect(() => {
@@ -101,6 +104,11 @@ const GalleryPage = () => {
     }
   };
 
+  useEffect(() => {
+    setPage(1);
+    setIndex(-1);
+  }, [slug, isMobile]);
+
   const downloadAllPhotos = async () => {
     setIsDownloading(true);
     try {
@@ -122,24 +130,29 @@ const GalleryPage = () => {
 
   const makeFallbackThumb = (url) => url.replace("/images/", "/thumbs/");
 
-  // 🔥 Mobile memory optimization:
-  // - Limit slides on mobile
-  // - Use low-res thumbnails to prevent Safari memory crash
+  // Mobile optimization with pagination instead of hard cutoff
   const photoList = gallery?.photos ?? [];
-  const limitedPhotos = isMobile ? photoList.slice(0, 40) : photoList;
+  const totalPages = isMobile ? Math.max(1, Math.ceil(photoList.length / PHOTOS_PER_PAGE)) : 1;
+  const safePage = Math.max(1, Math.min(page, totalPages));
+  const pagedPhotos = isMobile
+    ? photoList.slice((safePage - 1) * PHOTOS_PER_PAGE, safePage * PHOTOS_PER_PAGE)
+    : photoList;
 
   const slides = useMemo(
     () =>
-      limitedPhotos
-        .map((url, i) => ({
-          src: url,
-          thumbnail: makeWebpThumb(url),
-          fallbackThumbnail: makeFallbackThumb(url),
-          alt: `Gallery image ${i + 1}`,
-          originalIndex: i,
-        }))
+      pagedPhotos
+        .map((url, i) => {
+          const originalIndex = isMobile ? (safePage - 1) * PHOTOS_PER_PAGE + i : i;
+          return {
+            src: url,
+            thumbnail: makeWebpThumb(url),
+            fallbackThumbnail: makeFallbackThumb(url),
+            alt: `Gallery image ${originalIndex + 1}`,
+            originalIndex,
+          };
+        })
         .filter((slide) => !hiddenSlides[slide.originalIndex]),
-    [limitedPhotos, hiddenSlides],
+    [pagedPhotos, hiddenSlides, isMobile, safePage],
   );
 
   if (loading) return <p className="text-center p-8">Loading gallery...</p>;
@@ -185,34 +198,104 @@ const GalleryPage = () => {
         </div>
       )}
 
+      {isMobile && totalPages > 1 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-gray-100 px-4 py-3 text-sm">
+          <button
+            onClick={() => {
+              setPage((p) => Math.max(1, p - 1));
+              setIndex(-1);
+            }}
+            disabled={safePage === 1}
+            className="rounded bg-white px-3 py-2 shadow disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <div className="font-medium text-gray-700">
+            Page {safePage} of {totalPages}
+          </div>
+          <button
+            onClick={() => {
+              setPage((p) => Math.min(totalPages, p + 1));
+              setIndex(-1);
+            }}
+            disabled={safePage === totalPages}
+            className="rounded bg-white px-3 py-2 shadow disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
       {/* Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
         {slides.map((slide, i) => {
           if (hiddenThumbs[slide.originalIndex]) return null;
 
+          const isLoaded = thumbLoaded[slide.originalIndex];
+
           return (
-            <img
-              key={slide.originalIndex}
-              src={slide.thumbnail}
-              alt=""
-              className="rounded shadow cursor-pointer w-full h-full object-cover transition-transform hover:scale-105"
-              loading="lazy"
-              decoding="async"
-              onClick={() => setIndex(i)}
-              onError={(e) => {
-                const img = e.currentTarget;
-                if (img.dataset.fallbackTried === "1") {
-                  setHiddenThumbs((prev) => ({ ...prev, [slide.originalIndex]: true }));
-                  setHiddenSlides((prev) => ({ ...prev, [slide.originalIndex]: true }));
-                  return;
-                }
-                img.dataset.fallbackTried = "1";
-                img.src = slide.fallbackThumbnail;
-              }}
-            />
+            <div key={slide.originalIndex} className="relative overflow-hidden rounded shadow bg-gray-100 aspect-[3/4]">
+              {!isLoaded && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 text-gray-500">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-gray-500" />
+                  <div className="mt-2 text-xs">Loading...</div>
+                </div>
+              )}
+              <img
+                src={slide.thumbnail}
+                alt=""
+                className={`cursor-pointer w-full h-full object-cover transition duration-300 hover:scale-105 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+                loading="lazy"
+                decoding="async"
+                onClick={() => setIndex(i)}
+                onLoad={() => {
+                  setThumbLoaded((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                }}
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  if (img.dataset.fallbackTried === "1") {
+                    setHiddenThumbs((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                    setHiddenSlides((prev) => ({ ...prev, [slide.originalIndex]: true }));
+                    return;
+                  }
+                  img.dataset.fallbackTried = "1";
+                  img.src = slide.fallbackThumbnail;
+                }}
+              />
+            </div>
           );
         })}
       </div>
+
+      {isMobile && totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-gray-100 px-4 py-3 text-sm">
+          <button
+            onClick={() => {
+              setPage((p) => Math.max(1, p - 1));
+              setIndex(-1);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            disabled={safePage === 1}
+            className="rounded bg-white px-3 py-2 shadow disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <div className="font-medium text-gray-700">
+            Page {safePage} of {totalPages}
+          </div>
+          <button
+            onClick={() => {
+              setPage((p) => Math.min(totalPages, p + 1));
+              setIndex(-1);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            disabled={safePage === totalPages}
+            className="rounded bg-white px-3 py-2 shadow disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Lightbox */}
       <Lightbox
@@ -237,13 +320,11 @@ const GalleryPage = () => {
               src={slide.src}
               alt=""
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              loading="eager"
+              decoding="async"
               onError={() => {
                 setHiddenSlides((prev) => ({ ...prev, [slide.originalIndex]: true }));
                 setHiddenThumbs((prev) => ({ ...prev, [slide.originalIndex]: true }));
-                setIndex((current) => {
-                  if (slides.length <= 1) return -1;
-                  return Math.min(current, slides.length - 2);
-                });
               }}
             />
           ),
