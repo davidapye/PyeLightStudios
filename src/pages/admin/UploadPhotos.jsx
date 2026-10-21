@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ref, uploadBytesResumable, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
+import { ref, uploadBytesResumable, uploadBytes, getBlob, getDownloadURL, listAll } from 'firebase/storage';
 import { storage, db } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
@@ -10,6 +10,8 @@ const UploadPhotos = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadedPhotos, setUploadedPhotos] = useState([]);
+  const [generatingPreviews, setGeneratingPreviews] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
 
   useEffect(() => {
     const fetchUploadedPhotos = async () => {
@@ -53,7 +55,7 @@ const UploadPhotos = () => {
     e.preventDefault();
   };
 
-  const fileToWebpThumbnail = (file, maxSize = 600, quality = 0.82) =>
+  const fileToWebp = (file, maxSize, quality) =>
     new Promise((resolve, reject) => {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
@@ -114,6 +116,7 @@ const UploadPhotos = () => {
         const baseName = cleanName.replace(/\.[^.]+$/, '');
         const originalRef = ref(storage, `galleries/${slug}/${cleanName}`);
         const thumbRef = ref(storage, `thumbs/${slug}/${baseName}.webp`);
+        const previewRef = ref(storage, `previews/${slug}/${baseName}.webp`);
         const uploadTask = uploadBytesResumable(originalRef, file);
 
         await new Promise((resolve, reject) => {
@@ -134,8 +137,14 @@ const UploadPhotos = () => {
                   updatedUrls.push(downloadURL);
                 }
 
-                const thumbBlob = await fileToWebpThumbnail(file);
-                await uploadBytes(thumbRef, thumbBlob, { contentType: 'image/webp' });
+                const [thumbBlob, previewBlob] = await Promise.all([
+                  fileToWebp(file, 600, 0.82),
+                  fileToWebp(file, 2400, 0.88),
+                ]);
+                await Promise.all([
+                  uploadBytes(thumbRef, thumbBlob, { contentType: 'image/webp' }),
+                  uploadBytes(previewRef, previewBlob, { contentType: 'image/webp' }),
+                ]);
                 resolve();
               } catch (thumbError) {
                 console.error('Thumbnail generation/upload error:', thumbError);
@@ -153,12 +162,46 @@ const UploadPhotos = () => {
       const urls = await Promise.all(list.items.map(item => getDownloadURL(item)));
       setUploadedPhotos(urls);
       setFiles([]);
-      alert('Upload complete! Originals uploaded and WEBP thumbnails created.');
+      alert('Upload complete! Originals, WEBP thumbnails, and gallery previews created.');
     } catch (error) {
       console.error('Fatal upload error:', error);
       alert('Something went wrong during upload. Check console for details.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const generatePreviewsForExistingPhotos = async () => {
+    if (!uploadedPhotos.length) return;
+    setGeneratingPreviews(true);
+    setPreviewProgress(0);
+    let failed = 0;
+
+    try {
+      for (let index = 0; index < uploadedPhotos.length; index += 1) {
+        const url = uploadedPhotos[index];
+        try {
+          const pathname = new URL(url).pathname;
+          const objectStart = pathname.indexOf('/o/');
+          if (objectStart < 0) throw new Error('Unrecognized Firebase photo URL');
+          const objectPath = decodeURIComponent(pathname.slice(objectStart + 3));
+          const fileName = objectPath.split('/').pop();
+          const baseName = fileName.replace(/\.[^.]+$/, '');
+          const original = await getBlob(ref(storage, objectPath));
+          const preview = await fileToWebp(original, 2400, 0.88);
+          await uploadBytes(ref(storage, `previews/${slug}/${baseName}.webp`), preview, { contentType: 'image/webp' });
+        } catch (error) {
+          failed += 1;
+          console.error(`Preview generation failed for photo ${index + 1}:`, error);
+        }
+        setPreviewProgress(Math.round(((index + 1) / uploadedPhotos.length) * 100));
+      }
+
+      alert(failed
+        ? `Previews generated with ${failed} failure${failed === 1 ? '' : 's'}. Check the console for details.`
+        : `Generated full-quality previews for all ${uploadedPhotos.length} photos.`);
+    } finally {
+      setGeneratingPreviews(false);
     }
   };
 
@@ -219,6 +262,17 @@ const UploadPhotos = () => {
       />
 
       <h3 className="text-xl font-semibold mt-8 mb-4">Uploaded Photos</h3>
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={generatePreviewsForExistingPhotos}
+          disabled={generatingPreviews || uploadedPhotos.length === 0}
+          className="bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-800 disabled:opacity-50"
+        >
+          {generatingPreviews ? `Generating previews (${previewProgress}%)...` : 'Generate Previews for Existing Photos'}
+        </button>
+        <p className="mt-2 text-sm text-gray-600">Creates 2,400-pixel viewing previews; original photos remain unchanged for downloads.</p>
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {uploadedPhotos.map((url, index) => (
           <img

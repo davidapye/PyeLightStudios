@@ -1,120 +1,34 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import emailjs from '@emailjs/browser';
 
-const BookNow = () => {
-  const form = useRef();
-  const [formData, setFormData] = useState({
-    firstname: '',
-    lastname: '',
-    email: '',
-    phonenumber: '',
-    message: '',
-  });
+export default function BookNow() {
+  const form = useRef(null);
   const [status, setStatus] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const sendEmail = async (e) => {
-    e.preventDefault();
-
-    const formValues = Object.values(formData);
-    if (formValues.some(value => value.trim() !== '')) {
-      emailjs
-        .sendForm('service_cdpn0y8', 'template_7jcb87g', form.current, {
-          publicKey: 'g7s64zeO2nxvzPytZ',
-        })
-        .then(
-          () => {
-            console.log('SUCCESS!');
-            setFormData({
-              firstname: '',
-              lastname: '',
-              email: '',
-              phonenumber: '',
-              message: '',
-            });
-            setSubmitted(true);
-            setTimeout(() => setSubmitted(false), 3000);
-          },
-          (error) => {
-            console.log('FAILED...', error.text);
-            alert('Something went wrong. Please email pyelight@gmail.com');
-          },
-        );
-    } else {
-      console.log('Form is empty. Email not sent.');
+  const sendEmail = async (event) => {
+    event.preventDefault();
+    setStatus('sending');
+    try {
+      await emailjs.sendForm('service_cdpn0y8', 'template_7jcb87g', form.current, { publicKey: 'g7s64zeO2nxvzPytZ' });
+      form.current.reset();
+      setStatus('success');
+    } catch (error) {
+      setStatus('error');
     }
   };
-
-  return (
-    <div className="max-w-xl mx-auto mt-10 p-6 bg-white shadow-lg rounded-lg">
-      <h2 className="text-2xl font-semibold text-center mb-6">Contact Me</h2>
-      <form ref={form} onSubmit={sendEmail} className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input
-            type="text"
-            name="firstname"
-            placeholder="First name"
-            value={formData.firstname}
-            onChange={handleChange}
-            required
-            className="border p-3 rounded-md"
-          />
-          <input
-            type="text"
-            name="lastname"
-            placeholder="Last name"
-            value={formData.lastname}
-            onChange={handleChange}
-            required
-            className="border p-3 rounded-md"
-          />
+  return <main className="book-page">
+    <section className="book-intro"><p className="eyebrow">LET’S MAKE SOMETHING MEANINGFUL</p><h1>Start with<br/><em>your story.</em></h1><p>Tell me a little about the moments you want to remember. I’ll be in touch within one business day to plan the details together.</p><p><strong>45-minute portrait session · $100</strong></p></section>
+    <section className="book-card"><h2>Booking request</h2>
+      <form ref={form} onSubmit={sendEmail} className="book-form">
+        <div className="form-row">
+          <label>First name<input name="firstname" type="text" autoComplete="given-name" required /></label>
+          <label>Last name<input name="lastname" type="text" autoComplete="family-name" required /></label>
         </div>
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={formData.email}
-          onChange={handleChange}
-          required
-          className="border p-3 rounded-md"
-        />
-        <input
-          type="text"
-          name="phonenumber"
-          placeholder="Phone Number"
-          value={formData.phonenumber}
-          onChange={handleChange}
-          required
-          className="border p-3 rounded-md"
-        />
-        <textarea
-          name="message"
-          placeholder="Tell me about your shoot..."
-          rows={4}
-          value={formData.message}
-          onChange={handleChange}
-          required
-          className="border p-3 rounded-md"
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700 transition duration-300"
-        >
-          Submit
-        </button>
-        {submitted && (
-          <p className="text-green-600 text-center animate-pulse mt-2">
-            Form submitted successfully!
-            David will reach out shortly.
-          </p>
-        )}
+        <label>Email address<input name="email" type="email" autoComplete="email" required /></label>
+        <label>Phone number<input name="phonenumber" type="tel" autoComplete="tel" required /></label>
+        <label>Tell me about your shoot<textarea name="message" rows="5" required /></label>
+        <button className="button button-light book-submit" type="submit" disabled={status === 'sending'}>{status === 'sending' ? 'Sending…' : 'Send booking request'}</button>
+        <p className="form-note" aria-live="polite">{status === 'success' ? 'Thank you — your request is on its way. I’ll reply within one business day.' : status === 'error' ? 'Something went wrong. Please email pyelight@gmail.com and I’ll be glad to help.' : 'No commitment yet — this is just the beginning of a conversation.'}</p>
       </form>
-    </div>
-  );
-};
-
-export default BookNow;
+    </section>
+  </main>;
+}

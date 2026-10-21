@@ -1,0 +1,17 @@
+.admin-auth-page { display:grid; min-height:calc(100vh - 80px); place-items:center; padding:36px 18px; background:#f6f4ef; color:#272621; }
+.admin-auth-card { width:min(440px,100%); padding:clamp(28px,6vw,46px); border:1px solid #e5e0d6; border-radius:8px; background:#fffefa; box-shadow:0 24px 70px rgba(36,34,28,.08); }
+.admin-auth-eyebrow { margin:0 0 14px; color:#9a7955; font-size:.68rem; font-weight:700; letter-spacing:.2em; }
+.admin-auth-card h1 { margin:0 0 12px; font:400 clamp(2rem,7vw,2.7rem)/1.05 Georgia,'Times New Roman',serif; letter-spacing:-.035em; }
+.admin-auth-intro { margin:0; color:#706c64; line-height:1.6; }
+.admin-auth-form { display:grid; gap:11px; margin-top:26px; }
+.admin-auth-form label { margin-top:5px; color:#514e48; font-size:.84rem; font-weight:650; }
+.admin-auth-form input { width:100%; min-height:48px; padding:11px 13px; border:1px solid #d9d5ce; border-radius:5px; background:#fff; color:#272621; font:400 1rem system-ui,sans-serif; }
+.admin-auth-form input:focus-visible { outline:3px solid #b79468; outline-offset:2px; }
+.admin-auth-form button,.admin-auth-secondary { min-height:48px; margin-top:9px; padding:0 18px; border:0; border-radius:5px; background:#282722; color:#fff; font:650 .9rem system-ui,sans-serif; cursor:pointer; }
+.admin-auth-form button:disabled { cursor:wait; opacity:.6; }
+.admin-auth-error { margin:2px 0 0; color:#a83232; font-size:.88rem; }
+.admin-protected-area { min-height:70vh; }
+.admin-session-bar { display:flex; align-items:center; justify-content:flex-end; gap:14px; padding:12px max(20px,calc((100vw - 960px)/2)); color:#706c64; font-size:.82rem; }
+.admin-session-bar button { min-height:38px; padding:0 13px; border:1px solid #d9d5ce; border-radius:4px; background:#fffefa; color:#272621; font:600 .82rem system-ui,sans-serif; cursor:pointer; }
+.admin-auth-secondary { margin-top:24px; }
+@media(prefers-reduced-motion:reduce) { .admin-auth-form button { transition:none; } }
