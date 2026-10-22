@@ -3,6 +3,11 @@
         "origin": ["https://pyelightstudios.com","http://localhost:3000"],
         "method": ["GET", "POST", "PUT"],
         "maxAgeSeconds": 3600
+    },
+    {
+        "origin": ["*"],
+        "method": ["GET"],
+        "responseHeader": ["Content-Type", "Content-Length"],
+        "maxAgeSeconds": 3600
     }
 ]
-  

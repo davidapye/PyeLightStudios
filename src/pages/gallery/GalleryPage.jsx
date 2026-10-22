@@ -13,13 +13,39 @@ const EMPTY_PHOTOS = [];
 
 const getFileName = (url) => {
   try {
-    return decodeURIComponent(new URL(url).pathname.split("/").pop()) || "photo";
+    const pathname = new URL(url).pathname;
+    const objectMarker = "/o/";
+    const objectStart = pathname.indexOf(objectMarker);
+    const objectPath = objectStart >= 0
+      ? pathname.slice(objectStart + objectMarker.length)
+      : pathname;
+    return decodeURIComponent(objectPath.split("/").pop()) || "photo";
   } catch {
     return "photo";
   }
 };
 
-const ProgressiveGalleryImage = ({ slide }) => {
+const makeAttachmentUrl = (url, filename) => {
+  const downloadUrl = new URL(url);
+  downloadUrl.searchParams.set(
+    "response-content-disposition",
+    `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+  );
+  return downloadUrl.toString();
+};
+
+const triggerBrowserDownload = (url, filename) => {
+  const link = document.createElement("a");
+  // Firebase Storage is cross-origin, so Content-Disposition (set on the URL)
+  // tells mobile browsers to download instead of trying to render the file.
+  link.href = makeAttachmentUrl(url, filename);
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+const ProgressiveGalleryImage = ({ slide, downloadState }) => {
   const [fullImageLoaded, setFullImageLoaded] = useState(false);
   const [imageSrc, setImageSrc] = useState(slide.src);
   const [imageFailed, setImageFailed] = useState(false);
@@ -76,6 +102,14 @@ const ProgressiveGalleryImage = ({ slide }) => {
         }}
       />
       {imageFailed && <div className="gallery-lightbox-loading" role="alert">This photo couldn’t load. Please try again.</div>}
+      {downloadState && (
+        <div className="gallery-photo-download-status" role={downloadState.error ? "alert" : "status"} aria-live="polite">
+          <span>{downloadState.error || `Sent ${downloadState.filename} to your browser`}</span>
+          {!downloadState.error && (
+            <span>Check your browser’s downloads</span>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -88,7 +122,9 @@ const GalleryPage = () => {
   const [passwordError, setPasswordError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [zipAvailable, setZipAvailable] = useState(false);
+  const [zipDownloadUrl, setZipDownloadUrl] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [photoDownload, setPhotoDownload] = useState(null);
   const [index, setIndex] = useState(-1);
   const [isMobile, setIsMobile] = useState(false);
   const [hiddenThumbs, setHiddenThumbs] = useState({});
@@ -159,9 +195,11 @@ const GalleryPage = () => {
     const checkZip = async () => {
       try {
         const zipRef = storageRef(storage, `zips/${slug}.zip`);
-        await getDownloadURL(zipRef);
+        const url = await getDownloadURL(zipRef);
+        setZipDownloadUrl(url);
         setZipAvailable(true);
       } catch {
+        setZipDownloadUrl(null);
         setZipAvailable(false);
       }
     };
@@ -224,17 +262,32 @@ const GalleryPage = () => {
     setThumbLoaded({});
   }, [slug, isMobile]);
 
-  const downloadAllPhotos = async () => {
+  const downloadAllPhotos = () => {
+    if (!zipDownloadUrl || !gallery?.slug) return;
     setIsDownloading(true);
     try {
-      const zipRef = storageRef(storage, `zips/${gallery.slug}.zip`);
-      const url = await getDownloadURL(zipRef);
-      window.location.href = url;
-    } catch (err) {
-      console.error("ZIP not found or error:", err);
-      alert("Download not available. ZIP file not found for this gallery.");
+      triggerBrowserDownload(zipDownloadUrl, `${gallery.slug}-photos.zip`);
+    } catch (error) {
+      console.error("Could not start ZIP download:", error);
+      alert("Could not download the ZIP. Please try again or contact your photographer.");
     } finally {
-      setIsDownloading(false);
+      window.setTimeout(() => setIsDownloading(false), 1800);
+    }
+  };
+
+  const downloadPhoto = ({ slide }) => {
+    const url = slide?.download?.url || slide?.original || slide?.src;
+    const filename = slide?.download?.filename || getFileName(url);
+    if (!url) return;
+
+    try {
+      triggerBrowserDownload(url, filename);
+      setPhotoDownload({ filename, error: null });
+      window.setTimeout(() => setPhotoDownload(null), 3200);
+    } catch (error) {
+      console.error("Could not start photo download:", error);
+      setPhotoDownload({ filename, error: "Could not start the download. Please try again." });
+      window.setTimeout(() => setPhotoDownload(null), 4000);
     }
   };
 
@@ -327,9 +380,22 @@ const GalleryPage = () => {
             className="gallery-download"
             disabled={isDownloading}
           >
-            {isDownloading ? "Preparing download…" : "Download all photos"}
+            {isDownloading ? "Starting ZIP download…" : "Download all photos"}
           </button>
           )}
+        </div>
+      )}
+      {isDownloading && zipAvailable && (
+        <div className="gallery-zip-progress" role="status" aria-live="polite">
+          <div className="gallery-zip-progress-label">
+            <span>Downloading your photos</span>
+            <span>Check your browser’s downloads</span>
+          </div>
+          <progress
+            className="gallery-zip-progress-bar"
+            max="100"
+            aria-label="ZIP download progress"
+          />
         </div>
       )}
 
@@ -394,9 +460,10 @@ const GalleryPage = () => {
           height: isMobile ? 60 : 80,
           borderRadius: 6,
         }}
+        download={{ download: downloadPhoto }}
         zoom={{ maxZoomPixelRatio: 2 }}
         render={{
-          slide: ({ slide }) => <ProgressiveGalleryImage key={slide.src} slide={slide} />,
+          slide: ({ slide }) => <ProgressiveGalleryImage key={slide.src} slide={slide} downloadState={photoDownload} />,
         }}
       />
     </main>
