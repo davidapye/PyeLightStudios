@@ -5,7 +5,7 @@ import { deleteObject, ref, uploadBytesResumable, getDownloadURL, listAll } from
 import { storage, db } from '../../firebase';
 import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
 
-const MAX_ZIP_BYTES = 500 * 1024 * 1024;
+const MAX_ZIP_BYTES = 5 * 1024 * 1024 * 1024;
 const MAX_PHOTO_COUNT = 1000;
 const MAX_UNCOMPRESSED_BYTES = 5 * 1024 * 1024 * 1024;
 
@@ -21,7 +21,7 @@ const IMAGE_TYPES = {
 
 const getZipImageEntries = async (zipFile) => {
   if (zipFile.size > MAX_ZIP_BYTES) {
-    throw new Error('This ZIP is larger than 500 MB. Split it into smaller uploads and try again.');
+    throw new Error('This ZIP is larger than 5 GB. Split it into smaller uploads and try again.');
   }
 
   const archive = await JSZip.loadAsync(zipFile);
@@ -301,7 +301,7 @@ const UploadPhotos = () => {
     <div className="max-w-3xl mx-auto p-6">
       <h2 className="text-2xl font-bold mb-2">Upload Photos to: {slug}</h2>
       <p className="mb-5 text-sm text-gray-600">
-        Choose one ZIP containing the gallery photos. We’ll keep the ZIP for client downloads and automatically upload each photo with its thumbnail and preview.
+        Choose one ZIP (up to 5 GB) containing the gallery photos. We’ll keep the ZIP for client downloads and automatically upload each photo with its thumbnail and preview.
       </p>
 
       <div className="rounded border border-gray-300 bg-white p-5">

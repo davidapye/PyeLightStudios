@@ -104,8 +104,17 @@ const ProgressiveGalleryImage = ({ slide, downloadState }) => {
       {imageFailed && <div className="gallery-lightbox-loading" role="alert">This photo couldn’t load. Please try again.</div>}
       {downloadState && (
         <div className="gallery-photo-download-status" role={downloadState.error ? "alert" : "status"} aria-live="polite">
-          <span>{downloadState.error || `Sent ${downloadState.filename} to your browser`}</span>
-          {!downloadState.error && (
+          <span>{downloadState.error || (downloadState.loading
+            ? `Downloading ${downloadState.filename}…`
+            : downloadState.hint || `Sent ${downloadState.filename} to your browser`)}</span>
+          {downloadState.loading && (
+            <progress
+              max="100"
+              value={downloadState.progress ?? undefined}
+              aria-label={`Downloading ${downloadState.filename}`}
+            />
+          )}
+          {!downloadState.error && !downloadState.loading && !downloadState.hint && (
             <span>Check your browser’s downloads</span>
           )}
         </div>
@@ -123,7 +132,6 @@ const GalleryPage = () => {
   const [authorized, setAuthorized] = useState(false);
   const [zipAvailable, setZipAvailable] = useState(false);
   const [zipDownloadUrl, setZipDownloadUrl] = useState(null);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [photoDownload, setPhotoDownload] = useState(null);
   const [index, setIndex] = useState(-1);
   const [isMobile, setIsMobile] = useState(false);
@@ -264,25 +272,61 @@ const GalleryPage = () => {
 
   const downloadAllPhotos = () => {
     if (!zipDownloadUrl || !gallery?.slug) return;
-    setIsDownloading(true);
     try {
       triggerBrowserDownload(zipDownloadUrl, `${gallery.slug}-photos.zip`);
     } catch (error) {
       console.error("Could not start ZIP download:", error);
       alert("Could not download the ZIP. Please try again or contact your photographer.");
-    } finally {
-      window.setTimeout(() => setIsDownloading(false), 1800);
     }
   };
 
-  const downloadPhoto = ({ slide }) => {
+  const downloadPhoto = async ({ slide, saveAs }) => {
     const url = slide?.download?.url || slide?.original || slide?.src;
     const filename = slide?.download?.filename || getFileName(url);
     if (!url) return;
 
     try {
-      triggerBrowserDownload(url, filename);
-      setPhotoDownload({ filename, error: null });
+      if (isMobile) {
+        // Mobile browsers handle a cross-origin attachment URL more reliably
+        // than a blob-backed download.
+        triggerBrowserDownload(url, filename);
+      } else {
+        // Avoid the lightbox plugin's HEAD-based CORS probe, which Firebase
+        // Storage does not allow here and otherwise falls back to a new tab.
+        setPhotoDownload({ filename, error: null, loading: true, progress: null });
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Download failed (${response.status})`);
+        const total = Number(response.headers.get("content-length")) || 0;
+        if (!response.body?.getReader) {
+          const blob = await response.blob();
+          setPhotoDownload({ filename, error: null, loading: true, progress: 100 });
+          saveAs(blob, filename);
+        } else {
+          const reader = response.body.getReader();
+          const chunks = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.byteLength;
+            setPhotoDownload({
+              filename,
+              error: null,
+              loading: true,
+              progress: total ? Math.min(100, Math.round((received / total) * 100)) : null,
+            });
+          }
+          const blob = new Blob(chunks, { type: response.headers.get("content-type") || "application/octet-stream" });
+          saveAs(blob, filename);
+        }
+      }
+      setPhotoDownload({
+        filename,
+        error: null,
+        loading: false,
+        hint: isMobile ? "Press and hold on the photo to save it." : undefined,
+      });
       window.setTimeout(() => setPhotoDownload(null), 3200);
     } catch (error) {
       console.error("Could not start photo download:", error);
@@ -378,24 +422,10 @@ const GalleryPage = () => {
           <button
             onClick={downloadAllPhotos}
             className="gallery-download"
-            disabled={isDownloading}
           >
-            {isDownloading ? "Starting ZIP download…" : "Download all photos"}
+            Download all photos
           </button>
           )}
-        </div>
-      )}
-      {isDownloading && zipAvailable && (
-        <div className="gallery-zip-progress" role="status" aria-live="polite">
-          <div className="gallery-zip-progress-label">
-            <span>Downloading your photos</span>
-            <span>Check your browser’s downloads</span>
-          </div>
-          <progress
-            className="gallery-zip-progress-bar"
-            max="100"
-            aria-label="ZIP download progress"
-          />
         </div>
       )}
 
@@ -445,6 +475,7 @@ const GalleryPage = () => {
       {paginationControls()}
 
       {/* Lightbox */}
+      {/* Use blob downloads on desktop and attachment URLs on mobile. */}
       <Lightbox
         open={index >= 0}
         close={() => setIndex(-1)}

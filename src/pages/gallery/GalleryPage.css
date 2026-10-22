@@ -19,12 +19,8 @@
 .gallery-toolbar { display:flex; align-items:center; justify-content:space-between; gap:18px; min-height:68px; margin:0 0 22px; padding:12px 0; border-top:1px solid #e5e0d6; border-bottom:1px solid #e5e0d6; }
 .gallery-toolbar-note { margin:0; color:var(--gallery-muted); font-size:.86rem; }
 .gallery-download { display:inline-flex; align-items:center; justify-content:center; min-height:46px; padding:0 18px; border:1px solid #cfc8bb; border-radius:4px; background:rgba(255,255,255,.5); color:var(--gallery-ink); font:600 .84rem var(--sans, system-ui, sans-serif); cursor:pointer; transition:background-color .2s ease,transform .2s ease,border-color .2s ease; }
-.gallery-download:hover:not(:disabled) { border-color:#a9977b; background:#fff; }
-.gallery-download:active:not(:disabled) { transform:scale(.98); }
-.gallery-download:disabled { opacity:.55; cursor:wait; }
-.gallery-zip-progress { margin:-8px 0 22px; padding:12px 14px; border:1px solid #e5e0d6; border-radius:4px; background:rgba(255,255,255,.48); color:var(--gallery-muted); font-size:.82rem; }
-.gallery-zip-progress-label { display:flex; justify-content:space-between; gap:12px; margin-bottom:7px; }
-.gallery-zip-progress-bar { display:block; width:100%; height:8px; overflow:hidden; accent-color:#8d795d; }
+.gallery-download:hover { border-color:#a9977b; background:#fff; }
+.gallery-download:active { transform:scale(.98); }
 .gallery-photo-download-status { position:absolute; z-index:5; bottom:22px; left:50%; display:grid; gap:8px; width:min(88vw,360px); padding:12px 15px; transform:translateX(-50%); border:1px solid rgba(255,255,255,.2); border-radius:8px; background:rgba(24,24,24,.82); color:#fff; font:500 .82rem/1.4 var(--sans,system-ui,sans-serif); box-shadow:0 8px 28px rgba(0,0,0,.24); backdrop-filter:blur(16px); }
 .gallery-photo-download-status progress { display:block; width:100%; height:6px; accent-color:#d7c4a3; }
 
