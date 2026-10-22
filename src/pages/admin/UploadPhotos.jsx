@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import JSZip from 'jszip';
-import { ref, uploadBytesResumable, getDownloadURL, listAll } from 'firebase/storage';
+import { deleteObject, ref, uploadBytesResumable, getDownloadURL, listAll } from 'firebase/storage';
 import { storage, db } from '../../firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
+
+const MAX_ZIP_BYTES = 500 * 1024 * 1024;
+const MAX_PHOTO_COUNT = 1000;
+const MAX_UNCOMPRESSED_BYTES = 5 * 1024 * 1024 * 1024;
 
 const IMAGE_TYPES = {
   avif: 'image/avif',
@@ -16,6 +20,10 @@ const IMAGE_TYPES = {
 };
 
 const getZipImageEntries = async (zipFile) => {
+  if (zipFile.size > MAX_ZIP_BYTES) {
+    throw new Error('This ZIP is larger than 500 MB. Split it into smaller uploads and try again.');
+  }
+
   const archive = await JSZip.loadAsync(zipFile);
   const entries = Object.values(archive.files).filter((entry) => {
     if (entry.dir) return false;
@@ -25,7 +33,23 @@ const getZipImageEntries = async (zipFile) => {
     return Boolean(IMAGE_TYPES[extension]);
   });
 
+  if (entries.length > MAX_PHOTO_COUNT) {
+    throw new Error(`This ZIP contains more than ${MAX_PHOTO_COUNT} photos. Split it into smaller uploads and try again.`);
+  }
+  const uncompressedBytes = entries.reduce((total, entry) => total + (Number(entry._data?.uncompressedSize) || 0), 0);
+  if (uncompressedBytes > MAX_UNCOMPRESSED_BYTES) {
+    throw new Error('The photos in this ZIP expand to more than 5 GB. Split it into smaller uploads and try again.');
+  }
+
   return entries;
+};
+
+const getContentHash = async (blob) => {
+  // SubtleCrypto is unavailable when testing from a non-HTTPS LAN address.
+  // Upload still works there; duplicate detection is used when SHA-256 exists.
+  if (!window.crypto?.subtle) return null;
+  const digest = await window.crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 };
 
 const uploadBlobWithProgress = (storageRef, blob, contentType, onProgress) => new Promise((resolve, reject) => {
@@ -160,23 +184,23 @@ const UploadPhotos = () => {
       if (!entries.length) {
         throw new Error('No supported photos were found. ZIP files must contain JPG, PNG, WEBP, GIF, BMP, or AVIF images.');
       }
+      const galleryRef = doc(db, 'galleries', slug);
+      const currentGallery = await getDoc(galleryRef);
+      if (!currentGallery.exists()) throw new Error('Gallery not found. Create the gallery before uploading photos.');
+      const savedHashes = currentGallery.data().photoHashes;
+      const completedPhotoHashes = new Set(Array.isArray(savedHashes) ? savedHashes : []);
       setProgress(3);
-
-      // Keep the archive so gallery visitors can still download all photos as one ZIP.
-      setUploadStatus('Uploading the downloadable ZIP…');
-      await uploadBlobWithProgress(
-        ref(storage, `zips/${slug}.zip`),
-        zipFile,
-        'application/zip',
-        (fraction) => setProgress(Math.round(3 + fraction * 7)),
-      );
 
       const folderRef = ref(storage, `galleries/${slug}`);
       const existing = await listAll(folderRef);
-      const occupiedNames = new Set(existing.items.map((item) => item.name.toLowerCase()));
-      const newPhotoUrls = [];
-      const startProgress = 10;
-      const photoWorkProgress = 90;
+      const occupiedNames = new Set(existing.items.flatMap((item) => {
+        const fileName = item.name.toLowerCase();
+        return [fileName, fileName.replace(/\.[^.]+$/, '')];
+      }));
+      let newPhotoCount = 0;
+      let alreadyUploadedCount = 0;
+      const startProgress = 3;
+      const photoWorkProgress = 85;
 
       for (let index = 0; index < entries.length; index += 1) {
         const entry = entries[index];
@@ -184,56 +208,86 @@ const UploadPhotos = () => {
         const extension = originalName.split('.').pop().toLowerCase();
         const blob = await entry.async('blob');
         if (!blob.size) continue;
+        const contentHash = await getContentHash(blob);
+        if (contentHash && completedPhotoHashes.has(contentHash)) {
+          alreadyUploadedCount += 1;
+          setProgress(Math.round(startProgress + ((index + 1) / entries.length) * photoWorkProgress));
+          setUploadStatus(`Skipping already uploaded photo ${index + 1} of ${entries.length}: ${originalName}`);
+          continue;
+        }
+
         const photo = new File([blob], originalName, { type: IMAGE_TYPES[extension] });
         const photoName = uniquePhotoName(photo.name, occupiedNames);
         const baseName = photoName.replace(/\.[^.]+$/, '');
         const photoStart = startProgress + (index / entries.length) * photoWorkProgress;
         setUploadStatus(`Preparing photo ${index + 1} of ${entries.length}: ${photo.name}`);
 
+        const photoObjects = [];
         const [thumbBlob, previewBlob] = await Promise.all([
           fileToWebp(photo, 600, 0.82),
           fileToWebp(photo, 2400, 0.88),
         ]);
+        let originalRef;
+        let uploadedThumb;
+        let uploadedPreview;
+        try {
+          originalRef = await uploadBlobWithProgress(
+            ref(storage, `galleries/${slug}/${photoName}`),
+            photo,
+            photo.type,
+            (fraction) => setProgress(Math.round(photoStart + (fraction / 3) * (photoWorkProgress / entries.length))),
+          );
+          photoObjects.push(originalRef);
+          const thumbRef = ref(storage, `thumbs/${slug}/${baseName}.webp`);
+          const previewRef = ref(storage, `previews/${slug}/${baseName}.webp`);
+          uploadedThumb = await uploadBlobWithProgress(
+            thumbRef,
+            thumbBlob,
+            'image/webp',
+            (fraction) => setProgress(Math.round(photoStart + ((1 + fraction) / 3) * (photoWorkProgress / entries.length))),
+          );
+          photoObjects.push(uploadedThumb);
+          uploadedPreview = await uploadBlobWithProgress(
+            previewRef,
+            previewBlob,
+            'image/webp',
+            (fraction) => setProgress(Math.round(photoStart + ((2 + fraction) / 3) * (photoWorkProgress / entries.length))),
+          );
+          photoObjects.push(uploadedPreview);
+        } catch (error) {
+          await Promise.all(photoObjects.map((item) => deleteObject(item).catch(() => {})));
+          throw error;
+        }
 
-        const originalRef = await uploadBlobWithProgress(
-          ref(storage, `galleries/${slug}/${photoName}`),
-          photo,
-          photo.type,
-          (fraction) => setProgress(Math.round(photoStart + (fraction / 3) * (photoWorkProgress / entries.length))),
-        );
-        const thumbRef = ref(storage, `thumbs/${slug}/${baseName}.webp`);
-        const previewRef = ref(storage, `previews/${slug}/${baseName}.webp`);
-        await uploadBlobWithProgress(
-          thumbRef,
-          thumbBlob,
-          'image/webp',
-          (fraction) => setProgress(Math.round(photoStart + ((1 + fraction) / 3) * (photoWorkProgress / entries.length))),
-        );
-        await uploadBlobWithProgress(
-          previewRef,
-          previewBlob,
-          'image/webp',
-          (fraction) => setProgress(Math.round(photoStart + ((2 + fraction) / 3) * (photoWorkProgress / entries.length))),
-        );
-
-        newPhotoUrls.push(await getDownloadURL(originalRef));
+        const downloadUrl = await getDownloadURL(originalRef);
+        const galleryUpdate = { photos: arrayUnion(downloadUrl) };
+        if (contentHash) galleryUpdate.photoHashes = arrayUnion(contentHash);
+        await updateDoc(galleryRef, galleryUpdate);
+        if (contentHash) completedPhotoHashes.add(contentHash);
+        newPhotoCount += 1;
         setProgress(Math.round(startProgress + ((index + 1) / entries.length) * photoWorkProgress));
       }
 
-      const galleryRef = doc(db, 'galleries', slug);
-      const currentGallery = await getDoc(galleryRef);
-      const currentPhotos = currentGallery.exists() ? currentGallery.data().photos || [] : [];
-      await updateDoc(galleryRef, { photos: [...new Set([...currentPhotos, ...newPhotoUrls])] });
+      // Upload the all-photos archive only after every image has been processed.
+      // A failed image upload therefore won't replace a previously working archive.
+      setUploadStatus('Uploading the downloadable ZIP…');
+      await uploadBlobWithProgress(
+        ref(storage, `zips/${slug}.zip`),
+        zipFile,
+        'application/zip',
+        (fraction) => setProgress(Math.round(88 + fraction * 12)),
+      );
       await refreshUploadedPhotos();
 
       setProgress(100);
       setZipFile(null);
       setUploadStatus('');
-      setUploadMessage(`Upload successful — ${newPhotoUrls.length} photos and their previews are ready.`);
+      setUploadMessage(`Upload successful — ${newPhotoCount} new photos are ready${alreadyUploadedCount ? `; ${alreadyUploadedCount} already uploaded` : ''}.`);
       const input = document.getElementById('gallery-zip-file');
       if (input) input.value = '';
     } catch (error) {
       console.error('ZIP and photo upload error:', error);
+      await refreshUploadedPhotos().catch(() => {});
       const details = error?.code ? `${error.code}: ${error.message || 'Unknown upload error'}` : error?.message;
       setUploadFailed(true);
       setUploadStatus('');

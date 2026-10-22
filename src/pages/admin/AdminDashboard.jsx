@@ -4,6 +4,18 @@ import { collection, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firesto
 import { ref, listAll, deleteObject } from 'firebase/storage';
 import { Link } from 'react-router-dom';
 
+const listAllFilesRecursively = async (directoryRef) => {
+  const result = await listAll(directoryRef);
+  const nestedFiles = await Promise.all(result.prefixes.map(listAllFilesRecursively));
+  return [...result.items, ...nestedFiles.flat()];
+};
+
+const deleteFilesInBatches = async (files, batchSize = 25) => {
+  for (let index = 0; index < files.length; index += batchSize) {
+    await Promise.all(files.slice(index, index + batchSize).map((item) => deleteObject(item)));
+  }
+};
+
 const AdminDashboard = () => {
   const [galleries, setGalleries] = useState([]);
 
@@ -22,21 +34,21 @@ const AdminDashboard = () => {
     if (!confirmed) return;
   
     try {
-      const folderRef = ref(storage, `galleries/${slug}`);
-      let items = [];
-  
+      const directories = ['galleries', 'thumbs', 'previews'];
+      const filesByDirectory = await Promise.all(
+        directories.map((directory) => listAllFilesRecursively(ref(storage, `${directory}/${slug}`))),
+      );
+      const filesToDelete = filesByDirectory.flat();
+      await deleteFilesInBatches(filesToDelete);
       try {
-        const result = await listAll(folderRef);
-        items = result.items;
-      } catch (storageErr) {
-        console.warn(`Storage list failed (possibly empty folder):`, storageErr);
+        await deleteObject(ref(storage, `zips/${slug}.zip`));
+      } catch (storageError) {
+        if (storageError.code !== 'storage/object-not-found') throw storageError;
       }
-  
-      await Promise.all(items.map((item) => deleteObject(item)));
-  
+
       await deleteDoc(doc(db, 'galleries', slug));
   
-      setGalleries(galleries.filter(g => g.slug !== slug));
+      setGalleries((current) => current.filter((gallery) => gallery.slug !== slug));
     } catch (err) {
       console.error('Failed to delete gallery:', err);
       alert('An error occurred while deleting the gallery.');
@@ -78,7 +90,8 @@ const AdminDashboard = () => {
             <div className="mt-2">
               <label className="text-sm font-medium">Password:</label>
               <input
-                type="text"
+                type="password"
+                autoComplete="new-password"
                 defaultValue={gallery.password || ''}
                 className="ml-2 border rounded px-2 py-1 text-sm"
                 onBlur={(e) => handlePasswordChange(gallery.id, e.target.value)}
